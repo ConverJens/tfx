@@ -35,12 +35,9 @@ def _get_image_repo(image: str) -> str:
 def _print_docker_log_stream(stream: Iterable[Dict[str, Any]],
                              message_key: str,
                              newline: bool = False):
-  last_message = None
   for item in stream:
     if message_key in item:
-      if item[message_key] != last_message:
-        click.echo('[Docker] ' + item[message_key], nl=newline)
-        last_message = item[message_key]
+      click.echo('[Docker] ' + item[message_key], nl=newline)
 
 
 def build(target_image: str,

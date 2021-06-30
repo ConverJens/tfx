@@ -325,6 +325,9 @@ class KubeflowDagRunner(tfx_runner.TfxRunner):
       for upstream_component in component.upstream_nodes:
         depends_on.add(component_to_kfp_op[upstream_component])
 
+      # remove the extra pipeline node information
+      tfx_node_ir = self._dehydrate_tfx_ir(tfx_ir, component.id)
+
       kfp_component = base_component.BaseComponent(
           component=component,
           depends_on=depends_on,
@@ -333,12 +336,56 @@ class KubeflowDagRunner(tfx_runner.TfxRunner):
           tfx_image=self._config.tfx_image,
           kubeflow_metadata_config=self._config.kubeflow_metadata_config,
           pod_labels_to_attach=self._pod_labels_to_attach,
-          tfx_ir=tfx_ir)
+          tfx_ir=tfx_node_ir)
 
       for operator in self._config.pipeline_operator_funcs:
         kfp_component.container_op.apply(operator)
 
       component_to_kfp_op[component] = kfp_component.container_op
+
+  def _dehydrate_tfx_ir(self, pipeline: pipeline_pb2.Pipeline,
+                        node_id: str) -> pipeline_pb2.Pipeline:
+
+#     del person.things[:]
+# person.things.extend([thing1, thing2, ..])
+
+    for node in pipeline.nodes:
+      if (node.WhichOneof('node') == 'pipeline_node' and
+          node.pipeline_node.node_info.id == node_id):
+        del pipeline.nodes[:]
+        pipeline.nodes.extend([node])
+        break
+
+    print('&&&&&')
+    print(pipeline.deployment_config)
+    deployment_config = pipeline_pb2.IntermediateDeploymentConfig()
+    pipeline.deployment_config.Unpack(deployment_config)
+    print('^^^^')
+    print(deployment_config)
+
+    executor_specs_val = deployment_config.executor_specs.get(node_id)
+    print('%%executor_specs_val', executor_specs_val)
+    deployment_config.executor_specs.clear()
+    if executor_specs_val is not None:
+      deployment_config.executor_specs.setdefault(node_id, executor_specs_val)
+
+    custom_driver_specs_val = deployment_config.custom_driver_specs.get(node_id)
+    setattr(deployment_config, 'custom_driver_specs', {})
+    if custom_driver_specs_val is not None:
+      setattr(deployment_config, 'custom_driver_specs',
+              {node_id, custom_driver_specs_val})
+
+    node_level_val = deployment_config.node_level_platform_configs.get(node_id)
+    setattr(deployment_config, 'node_level_platform_configs', {})
+    if node_level_val is not None:
+      setattr(deployment_config, 'node_level_platform_configs',
+              {node_id, node_level_val})
+
+    pipeline.deployment_config.Pack(deployment_config)
+    print('*******')
+    print(pipeline.deployment_config)
+
+    return pipeline
 
   def _generate_tfx_ir(
       self, pipeline: tfx_pipeline.Pipeline) -> Optional[pipeline_pb2.Pipeline]:
